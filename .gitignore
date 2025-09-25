@@ -1,0 +1,8 @@
+# Ignore virtual environment
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.csv
+*.sqlite
