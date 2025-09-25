@@ -1,0 +1,8 @@
+pandas
+numpy
+scikit-learn
+matplotlib
+joblib
+imbalanced-learn
+xgboost      # optional, used only if installed (Grid/feature importance)
+openml       # optional - if you want to fetch from OpenML more robustly

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Credit Score Checking</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Credit Score Checking</h1>
+
+    {% if error %}
+        <p style="color:red;">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv">
+        <button type="submit">Predict</button>
+    </form>
+
+    <h2>Graphs</h2>
+    <div>
+        {% for graph in graphs %}
+            <img src="{{ url_for('static', filename=graph) }}" alt="Graph" style="max-width:400px; margin:10px;">
+        {% endfor %}
+    </div>
+</body>
+</html>
