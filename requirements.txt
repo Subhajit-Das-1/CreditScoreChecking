@@ -1,4 +1,6 @@
-pandas
+Flask==2.1.1
+pandas==1.4.2
+joblib==1.1.0
 numpy
 scikit-learn
 matplotlib
