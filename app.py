@@ -3,15 +3,20 @@ import pandas as pd
 import joblib
 import os
 import tempfile
-from utils import add_age_bin  # import from utils
+from utils import add_age_bin  # shared utility
 
 app = Flask(__name__)
 
-# Load trained model
-MODEL_PATH = "outputs/best_model_LogisticRegression.joblib"
-model = joblib.load(MODEL_PATH)
+# Path to your deployed model
+MODEL_PATH = os.path.join("outputs", "best_model_LogisticRegression.joblib")
+if not os.path.exists(MODEL_PATH):
+    raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
 
-# Infer required columns
+# Load trained pipeline
+model = joblib.load(MODEL_PATH)
+print(f"[+] Loaded model from {MODEL_PATH}")
+
+# Infer required columns from pipeline (if possible)
 try:
     REQUIRED_COLUMNS = model.feature_names_in_.tolist()
 except AttributeError:
@@ -34,7 +39,7 @@ def index():
         except Exception as e:
             return render_template("index.html", graphs=graphs, error=f"Failed to read CSV: {e}")
 
-        # Check required columns
+        # Check for required columns if available
         if REQUIRED_COLUMNS:
             missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
             if missing_cols:
@@ -44,14 +49,21 @@ def index():
                     error=f"CSV is missing required columns: {', '.join(missing_cols)}"
                 )
 
-        # Apply transformation
+        # Apply age bin feature
         df = add_age_bin(df)
 
-        # Predict
+        # Make predictions
         preds = model.predict(df)
         df['predicted_class'] = preds
 
-        # Save to a temporary file
+        # Optional: predicted probabilities if pipeline supports it
+        try:
+            y_proba = model.predict_proba(df)[:, 1]
+            df['predicted_proba'] = y_proba
+        except Exception:
+            pass
+
+        # Save predictions to a temporary file
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
         df.to_csv(temp_file.name, index=False)
         temp_file.close()
