@@ -2,6 +2,9 @@
 import pandas as pd
 
 def add_age_bin(X):
+    """
+    Adds an 'age_bin' categorical column to the dataframe based on age ranges.
+    """
     X = X.copy()
     if 'age' in X.columns:
         X['age_bin'] = pd.cut(

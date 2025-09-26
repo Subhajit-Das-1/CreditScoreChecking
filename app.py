@@ -3,7 +3,7 @@ import pandas as pd
 import joblib
 import os
 import tempfile
-from utils import add_age_bin  # <-- import from utils.py
+from utils import add_age_bin  # import from utils
 
 app = Flask(__name__)
 
@@ -11,7 +11,7 @@ app = Flask(__name__)
 MODEL_PATH = "outputs/best_model_LogisticRegression.joblib"
 model = joblib.load(MODEL_PATH)
 
-# Try to infer required columns
+# Infer required columns
 try:
     REQUIRED_COLUMNS = model.feature_names_in_.tolist()
 except AttributeError:
@@ -51,7 +51,7 @@ def index():
         preds = model.predict(df)
         df['predicted_class'] = preds
 
-        # Save to a unique temp file
+        # Save to a temporary file
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
         df.to_csv(temp_file.name, index=False)
         temp_file.close()
