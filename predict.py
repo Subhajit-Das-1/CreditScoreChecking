@@ -1,66 +1,52 @@
 #!/usr/bin/env python3
 import os
+import sys
 import pandas as pd
 import joblib
 import argparse
-from utils import add_age_bin  # import from utils
+from utils import add_age_bin
 
-HIGH_RISK_PROB_THRESHOLD = 0.3
 OUTPUT_DIR = "outputs"
+HIGH_RISK_PROB_THRESHOLD = 0.3
+
+# Make sure utils.py is importable
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 def load_model(model_path):
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
-    model = joblib.load(model_path)
-    print(f"[+] Loaded model from {model_path}")
-    return model
+    return joblib.load(model_path)
 
 def main(args):
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Load trained model
     model = load_model(args.model)
-
-    # Load input CSV
-    if not os.path.exists(args.input):
-        raise FileNotFoundError(f"Input CSV not found: {args.input}")
     X_new = pd.read_csv(args.input)
-    print(f"[+] Loaded input data ({X_new.shape[0]} rows, {X_new.shape[1]} columns)")
-
-    # Apply age bin
     X_new = add_age_bin(X_new)
 
-    # Predict
     y_pred = model.predict(X_new)
     X_new['predicted_class'] = y_pred
 
-    # Optional: predicted probabilities
     try:
         y_proba = model.predict_proba(X_new)[:, 1]
         X_new['predicted_proba'] = y_proba
     except Exception:
         y_proba = None
 
-    # Save full predictions
-    predictions_file = os.path.join(args.output_dir, "predictions.csv")
-    X_new.to_csv(predictions_file, index=False)
-    print(f"[+] Saved full predictions to {predictions_file}")
+    X_new.to_csv(os.path.join(args.output_dir, "predictions.csv"), index=False)
 
-    # Flag high-risk customers
     if y_proba is not None:
         high_risk = X_new[(X_new['predicted_class'] == 0) | (X_new['predicted_proba'] < HIGH_RISK_PROB_THRESHOLD)]
     else:
         high_risk = X_new[X_new['predicted_class'] == 0]
 
-    high_risk_file = os.path.join(args.output_dir, "high_risk_customers.csv")
-    high_risk.to_csv(high_risk_file, index=False)
-    print(f"[+] Saved high-risk customers to {high_risk_file}")
-    print(f"[+] Number of high-risk customers: {len(high_risk)}")
+    high_risk.to_csv(os.path.join(args.output_dir, "high_risk_customers.csv"), index=False)
+    print(f"[+] Predictions saved to {args.output_dir}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Predict using trained credit scoring model")
-    parser.add_argument('--model', type=str, required=True, help='Path to trained model (.joblib)')
-    parser.add_argument('--input', type=str, required=True, help='Path to input CSV file')
-    parser.add_argument('--output_dir', type=str, default='outputs', help='Folder to save predictions')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str, default=os.path.join(OUTPUT_DIR, "best_model.joblib"))
+    parser.add_argument('--input', type=str, required=True)
+    parser.add_argument('--output_dir', type=str, default=OUTPUT_DIR)
     args = parser.parse_args()
     main(args)
