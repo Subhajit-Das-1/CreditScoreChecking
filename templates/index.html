@@ -11,15 +11,19 @@
         <p style="color:red;">{{ error }}</p>
     {% endif %}
 
+    <!-- Upload form -->
     <form method="POST" enctype="multipart/form-data">
         <input type="file" name="file" accept=".csv">
         <button type="submit">Predict</button>
     </form>
 
+    <!-- Graphs -->
     <h2>Graphs</h2>
     <div>
         {% for graph in graphs %}
-            <img src="{{ url_for('static', filename=graph) }}" alt="Graph" style="max-width:400px; margin:10px;">
+            <img src="{{ url_for('static', filename=graph) }}" 
+                 alt="{{ graph }}" 
+                 style="max-width:400px; margin:10px;">
         {% endfor %}
     </div>
 </body>
