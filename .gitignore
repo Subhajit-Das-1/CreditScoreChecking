@@ -1,8 +1,18 @@
-# Ignore virtual environment
+# Ignore Python virtual environment
 env/
+
+# Ignore Python cache files
 __pycache__/
 *.pyc
 *.pyo
+
+# Ignore logs and temporary files
 *.log
-*.csv
 *.sqlite
+
+# Ignore CSV files globally, except the ones in outputs/ you want to keep
+*.csv
+!outputs/*.csv
+
+# Ignore model backups if any (optional)
+*.joblib~ 
