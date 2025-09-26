@@ -9,21 +9,10 @@ import os
 import pandas as pd
 import joblib
 import argparse
-
-# Custom transformer to add age_bin
-def add_age_bin(X):
-    X = X.copy()
-    if 'age' in X.columns:
-        X['age_bin'] = pd.cut(
-            X['age'], bins=[0, 25, 35, 50, 65, 120],
-            labels=['<25', '25-34', '35-49', '50-64', '65+']
-        )
-    return X
+from utils import add_age_bin  # import from utils.py
 
 # Threshold for flagging high-risk customers based on predicted probability
-HIGH_RISK_PROB_THRESHOLD = 0.3  # optional: adjust
-
-OUTPUT_DIR = "outputs"
+HIGH_RISK_PROB_THRESHOLD = 0.3  # adjust as needed
 
 def load_model(model_path):
     if not os.path.exists(model_path):
@@ -44,15 +33,18 @@ def main(args):
     X_new = pd.read_csv(args.input)
     print(f"[+] Loaded input data ({X_new.shape[0]} rows, {X_new.shape[1]} columns)")
 
-    # Make predictions
+    # Apply preprocessing
+    X_new = add_age_bin(X_new)
+
+    # Predict
     y_pred = model.predict(X_new)
     X_new['predicted_class'] = y_pred
 
-    # Optional: predicted probabilities
+    # Predict probabilities (optional)
     try:
-        y_proba = model.predict_proba(X_new)[:, 1]
+        y_proba = model.predict_proba(X_new)[:, 1]  # probability of "bad" class
         X_new['predicted_proba'] = y_proba
-    except Exception:
+    except AttributeError:
         y_proba = None
 
     # Save full predictions
@@ -62,9 +54,10 @@ def main(args):
 
     # Flag high-risk customers
     if y_proba is not None:
-        high_risk = X_new[(X_new['predicted_class'] == 0) | (X_new['predicted_proba'] < HIGH_RISK_PROB_THRESHOLD)]
+        # Adjust logic: consider "bad" class (1) with probability > threshold as high-risk
+        high_risk = X_new[(X_new['predicted_class'] == 1) | (X_new['predicted_proba'] > HIGH_RISK_PROB_THRESHOLD)]
     else:
-        high_risk = X_new[X_new['predicted_class'] == 0]
+        high_risk = X_new[X_new['predicted_class'] == 1]
 
     high_risk_file = os.path.join(args.output_dir, "high_risk_customers.csv")
     high_risk.to_csv(high_risk_file, index=False)
@@ -72,7 +65,9 @@ def main(args):
     print(f"[+] Number of high-risk customers: {len(high_risk)}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Predict using trained credit scoring model and flag high-risk customers")
+    parser = argparse.ArgumentParser(
+        description="Predict using trained credit scoring model and flag high-risk customers"
+    )
     parser.add_argument('--model', type=str, required=True, help='Path to trained model (.joblib)')
     parser.add_argument('--input', type=str, required=True, help='Path to input CSV file')
     parser.add_argument('--output_dir', type=str, default='outputs', help='Folder to save predictions')

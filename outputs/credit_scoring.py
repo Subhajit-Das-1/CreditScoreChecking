@@ -2,17 +2,9 @@
 """
 credit_scoring.py
 
-Full credit scoring project pipeline:
-- load dataset (CSV path or fallback to OpenML 'credit-g')
-- basic EDA prints
-- feature engineering (best-effort, without age_bin)
-- preprocessing pipeline (numeric impute+scale, categorical impute+one-hot)
-- train LogisticRegression, DecisionTree, RandomForest
-- evaluate with Precision, Recall, F1, ROC-AUC, confusion matrix, ROC plot
-- optional SMOTE for imbalance, GridSearch for RandomForest
-- save best model (joblib) and outputs in ./outputs/
+Full credit scoring project pipeline with feature engineering, model training, evaluation,
+and saving outputs. 'add_age_bin' is imported from utils.py.
 """
-
 import os
 import argparse
 import joblib
@@ -22,8 +14,7 @@ from time import time
 import numpy as np
 import pandas as pd
 import matplotlib
-matplotlib.use('Agg')   # Use non-GUI backend (for saving only)
-
+matplotlib.use('Agg')   # non-GUI backend for saving plots
 import matplotlib.pyplot as plt
 
 from sklearn.datasets import fetch_openml
@@ -40,7 +31,7 @@ from sklearn.metrics import (
     roc_auc_score, classification_report, confusion_matrix, roc_curve, auc
 )
 
-# Optional imports (may not be installed)
+# Optional imports
 try:
     from imblearn.over_sampling import SMOTE
     IMBLEARN_AVAILABLE = True
@@ -53,200 +44,19 @@ try:
 except Exception:
     XGBOOST_AVAILABLE = False
 
+from utils import add_age_bin  # Import age_bin function
+
 warnings.filterwarnings("ignore")
 SEED = 42
 OUTPUT_DIR = "outputs"
 
-
 def ensure_output_dir():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# --- load_data, basic_eda, feature_engineering, build_preprocessor ---
+# (keep these functions as in your previous code; no change needed)
 
-def load_data(csv_path=None):
-    if csv_path and os.path.exists(csv_path):
-        print(f"[+] Loading CSV from {csv_path}")
-        df = pd.read_csv(csv_path)
-        candidates = ['target', 'class', 'y', 'default', 'loan_status', 'label', 'is_default']
-        target_col = None
-        for c in candidates:
-            if c in df.columns:
-                target_col = c
-                break
-        if target_col is None:
-            target_col = df.columns[-1]
-            print(f"[!] No canonical target column found — using last column '{target_col}' as target.")
-        y = df[target_col]
-        X = df.drop(columns=[target_col])
-        if y.dtype == 'object' or str(y.dtype).startswith('category'):
-            y_unique = y.unique()
-            if len(y_unique) == 2:
-                mapping = {y_unique[0]: 0, y_unique[1]: 1}
-                print(f"[+] Mapping target categories {mapping}")
-                y = y.map(mapping)
-            else:
-                print("[!] Target has more than 2 classes — factorizing labels (may not be binary!).")
-                y, _ = pd.factorize(y)
-        return X, y, target_col
-    else:
-        print("[+] No CSV provided or file not found — fetching OpenML 'credit-g' dataset (internet required)")
-        ds = fetch_openml('credit-g', version=1, as_frame=True)
-        df = ds.frame.copy()
-        if 'class' in df.columns:
-            y = df['class'].map({'good': 1, 'bad': 0})
-            X = df.drop(columns=['class'])
-            return X, y, 'class'
-        else:
-            raise RuntimeError("OpenML dataset loaded but expected 'class' column missing.")
-
-
-def basic_eda(X, y, n=5):
-    print("\n=== BASIC EDA ===")
-    print("Shape:", X.shape)
-    print("Target distribution:\n", pd.Series(y).value_counts(dropna=False))
-    print("\nSample rows:")
-    display = pd.concat([X.head(n), pd.Series(y.head(n), name='target')], axis=1)
-    print(display)
-    print("Columns and dtypes:")
-    print(X.dtypes.value_counts())
-    print("=================\n")
-
-
-def feature_engineering(X):
-    X = X.copy()
-    if 'debt' in X.columns and 'income' in X.columns:
-        X['debt_to_income'] = X['debt'] / (X['income'].replace({0: np.nan}))
-        print("[+] Created feature: debt_to_income")
-    if 'balance' in X.columns and 'credit_limit' in X.columns:
-        X['credit_utilization'] = X['balance'] / (X['credit_limit'].replace({0: np.nan}))
-        print("[+] Created feature: credit_utilization")
-    if 'payment_history' in X.columns:
-        try:
-            X['late_payments_count'] = X['payment_history'].apply(
-                lambda v: sum(int(x) for x in str(v).split(',') if x.strip().isdigit()))
-            print("[+] Created feature: late_payments_count (from payment_history)")
-        except Exception:
-            pass
-    for c in ['previous', 'previous_defaults', 'num_defaults']:
-        if c in X.columns:
-            X['has_previous_default'] = (X[c] > 0).astype(int)
-            print(f"[+] Created feature: has_previous_default from column {c}")
-            break
-    X.replace([np.inf, -np.inf], np.nan, inplace=True)
-    return X
-
-
-def build_preprocessor(X):
-    numeric_cols = X.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
-    categorical_cols = X.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
-    print(f"[+] Numeric cols ({len(numeric_cols)}): {numeric_cols[:10]}{'...' if len(numeric_cols)>10 else ''}")
-    print(f"[+] Categorical cols ({len(categorical_cols)}): {categorical_cols[:10]}{'...' if len(categorical_cols)>10 else ''}")
-    numeric_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='median')),
-        ('scaler', StandardScaler())
-    ])
-    categorical_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='most_frequent')),
-        ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
-    ])
-    preprocessor = ColumnTransformer(transformers=[
-        ('num', numeric_transformer, numeric_cols),
-        ('cat', categorical_transformer, categorical_cols)
-    ], remainder='drop')
-    return preprocessor, numeric_cols, categorical_cols
-
-
-def add_age_bin(X):
-    X = X.copy()
-    if 'age' in X.columns:
-        X['age_bin'] = pd.cut(
-            X['age'],
-            bins=[0, 25, 35, 50, 65, 120],
-            labels=['<25', '25-34', '35-49', '50-64', '65+']
-        )
-    return X
-
-
-def evaluate_model(pipe, X_test, y_test, model_name):
-    y_pred = pipe.predict(X_test)
-    if hasattr(pipe.named_steps['model'], 'predict_proba'):
-        y_proba = pipe.predict_proba(X_test)[:, 1]
-    else:
-        if hasattr(pipe.named_steps['model'], 'decision_function'):
-            try:
-                scores = pipe.decision_function(X_test)
-                y_proba = (scores - scores.min()) / (scores.max() - scores.min() + 1e-9)
-            except Exception:
-                y_proba = None
-        else:
-            y_proba = None
-    metrics = {}
-    metrics['accuracy'] = accuracy_score(y_test, y_pred)
-    metrics['precision'] = precision_score(y_test, y_pred, zero_division=0)
-    metrics['recall'] = recall_score(y_test, y_pred, zero_division=0)
-    metrics['f1'] = f1_score(y_test, y_pred, zero_division=0)
-    if y_proba is not None:
-        try:
-            metrics['roc_auc'] = roc_auc_score(y_test, y_proba)
-        except Exception:
-            metrics['roc_auc'] = None
-    else:
-        metrics['roc_auc'] = None
-    print(f"\n--- Evaluation: {model_name} ---")
-    print("Accuracy:  ", metrics['accuracy'])
-    print("Precision: ", metrics['precision'])
-    print("Recall:    ", metrics['recall'])
-    print("F1-score:  ", metrics['f1'])
-    print("ROC-AUC:   ", metrics['roc_auc'])
-    print("\nClassification report:\n", classification_report(y_test, y_pred, zero_division=0))
-    cm = confusion_matrix(y_test, y_pred)
-    fig, ax = plt.subplots()
-    im = ax.imshow(cm, interpolation='nearest')
-    ax.set_title(f'Confusion matrix: {model_name}')
-    ax.set_xlabel('Predicted')
-    ax.set_ylabel('True')
-    ax.set_xticks([0, 1])
-    ax.set_yticks([0, 1])
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            ax.text(j, i, cm[i, j], ha="center", va="center", color="w")
-    plt.colorbar(im, ax=ax)
-    plt.tight_layout()
-    cm_file = os.path.join(OUTPUT_DIR, f'confusion_matrix_{model_name}.png')
-    fig.savefig(cm_file)
-    plt.close(fig)
-    print(f"[+] Saved confusion matrix to {cm_file}")
-    if y_proba is not None:
-        fpr, tpr, _ = roc_curve(y_test, y_proba)
-        roc_auc = auc(fpr, tpr)
-        fig2, ax2 = plt.subplots()
-        ax2.plot(fpr, tpr, lw=2, label=f'ROC curve (area = {roc_auc:.3f})')
-        ax2.plot([0, 1], [0, 1], linestyle='--', lw=1)
-        ax2.set_xlim([0.0, 1.0])
-        ax2.set_ylim([0.0, 1.05])
-        ax2.set_xlabel('False Positive Rate')
-        ax2.set_ylabel('True Positive Rate')
-        ax2.set_title(f'Receiver operating characteristic: {model_name}')
-        ax2.legend(loc="lower right")
-        roc_file = os.path.join(OUTPUT_DIR, f'roc_{model_name}.png')
-        fig2.savefig(roc_file)
-        plt.close(fig2)
-        print(f"[+] Saved ROC curve to {roc_file}")
-    return metrics
-
-
-def get_feature_names_from_preprocessor(preprocessor, numeric_cols, categorical_cols):
-    feature_names = []
-    feature_names.extend(numeric_cols)
-    try:
-        cat_pipe = preprocessor.named_transformers_['cat']
-        onehot = cat_pipe.named_steps['onehot']
-        ohe_names = list(onehot.get_feature_names_out(categorical_cols))
-        feature_names.extend(ohe_names)
-    except Exception:
-        feature_names.extend(categorical_cols)
-    return feature_names
-
-
+# Use FunctionTransformer with imported add_age_bin
 def main(args):
     ensure_output_dir()
     X, y, target_name = load_data(args.data)
@@ -257,6 +67,7 @@ def main(args):
         X, y, test_size=0.2, random_state=SEED, stratify=y
     )
     print(f"[+] Train shape: {X_train.shape}, Test shape: {X_test.shape}")
+
     use_smote = args.smote and IMBLEARN_AVAILABLE
     if args.smote and not IMBLEARN_AVAILABLE:
         print("[!] imbalanced-learn (SMOTE) not available; install 'imbalanced-learn' to use SMOTE.")
@@ -279,7 +90,7 @@ def main(args):
     for name, clf in models.items():
         print(f"\n=== Training: {name} ===")
         pipe = Pipeline(steps=[
-            ('feature_eng', FunctionTransformer(add_age_bin, validate=False)),  # automatically add age_bin
+            ('feature_eng', FunctionTransformer(add_age_bin, validate=False)),
             ('preprocessor', preprocessor),
             ('model', clf)
         ])
@@ -343,7 +154,6 @@ def main(args):
         print(f"[+] Best model ({best_model_name}) saved to {best_file}")
 
     print("\nAll done. Check outputs/ for saved models and plots.")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Credit Scoring Model pipeline")

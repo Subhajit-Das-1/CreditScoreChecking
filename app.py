@@ -3,17 +3,7 @@ import pandas as pd
 import joblib
 import os
 import tempfile
-
-# Custom transformer used in the trained pipeline
-def add_age_bin(X):
-    X = X.copy()
-    if 'age' in X.columns:
-        X['age_bin'] = pd.cut(
-            X['age'],
-            bins=[0, 25, 35, 50, 65, 120],
-            labels=['<25', '25-34', '35-49', '50-64', '65+']
-        )
-    return X
+from utils import add_age_bin  # <-- import from utils.py
 
 app = Flask(__name__)
 
@@ -29,7 +19,6 @@ except AttributeError:
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    # Graphs must exist in static/
     graphs = [
         "confusion_matrix_LogisticRegression.png",
         "roc_LogisticRegression.png"
