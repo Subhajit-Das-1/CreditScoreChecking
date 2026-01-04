@@ -50,34 +50,39 @@ Copy code
 ```bash
 git clone https://github.com/yourusername/CreditScoreChecking.git
 cd CreditScoreChecking
-Set up a virtual environment
+```
+## Set up a virtual environment
 
-bash
-Copy code
+```bash
 python -m venv env
-# Activate on Linux/Mac
-source env/bin/activate
-# Activate on Windows
+```
+## Activate on Linux/Mac
+```bash
+ source env/bin/activate
+```
+## Activate on Windows
+```bash
 env\Scripts\activate
-Install dependencies
+```
+## Install dependencies
 
-bash
-Copy code
+```bash
 pip install -r requirements.txt
-Run the application
+```
+## Run the application
 
-bash
-Copy code
+```bash
 python app.py
-🎯 Using the Web App
-Upload your CSV file with financial data.
+```
+# 🎯 Using the Web App
+- Upload your CSV file with financial data.
 
-Click Submit to generate predictions.
+- Click Submit to generate predictions.
 
-Download the predictions CSV containing:
+- Download the predictions CSV containing:
 
-predicted_class → 0 = High Risk, 1 = Low Risk
+- predicted_class → 0 = High Risk, 1 = Low Risk
 
-predicted_proba → Probability of being low-risk (if available)
+- predicted_proba → Probability of being low-risk (if available)
 
 
